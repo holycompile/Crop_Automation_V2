@@ -1,0 +1,12 @@
+{
+  "name": "AgroFlow - Smart Water Budgeting",
+  "description": "A comprehensive sensor-based water management and budgeting platform for farmers, featuring AI-driven insights, live sensor monitoring, and a voice-activated agricultural assistant.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
