@@ -27,9 +27,23 @@ const CropLayer: React.FC<CropLayerProps> = ({ cropMap }) => {
               <h3 className="text-sm font-bold text-gray-800 border-b border-gray-100 pb-1 mb-1">
                 Crop Classification
               </h3>
-              <p className="text-xs text-gray-600 mb-1">
-                <strong>Crop Type:</strong> <span className="font-semibold text-emerald-700">{zone.cropType}</span>
-              </p>
+              {(() => {
+                const [blockName, cropType] = zone.cropType.includes(": ") 
+                  ? zone.cropType.split(": ") 
+                  : [null, zone.cropType];
+                return (
+                  <>
+                    {blockName && (
+                      <p className="text-xs text-gray-600 mb-1">
+                        <strong>Subdivision:</strong> <span className="font-semibold text-slate-800">{blockName}</span>
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-600 mb-1">
+                      <strong>Crop Type:</strong> <span className="font-semibold text-emerald-700">{cropType}</span>
+                    </p>
+                  </>
+                );
+              })()}
               <p className="text-xs text-gray-600 mb-1">
                 <strong>Classification Confidence:</strong> {zone.confidence.toFixed(1)}%
               </p>

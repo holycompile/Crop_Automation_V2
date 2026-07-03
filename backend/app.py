@@ -71,13 +71,60 @@ def get_simulated_telemetry(lat, lon, crop="Wheat", stage="Vegetative"):
     }
 
 
-def generate_grids(lat, lon, seed, telemetry, crop, stage):
+def generate_grids(lat, lon, seed, telemetry, crop, stage, lat_span=0.05, lon_span=0.05, location_name="Indore"):
     """
-    Generates consistent spatial classification, moisture stress,
-    and 8-day irrigation advisory maps around the coordinates.
+    Generates a highly detailed, irregular polygon network (25 tessellated zone blocks)
+    representing sectors/wards of a master plan, centered at the geocoded location,
+    scaling dynamically and sharing vertices with zero gaps.
     """
-    spacing = 0.003  # Spacing between cells (~330m)
+    M = 5
+    N = 5
     
+    # Bounding radius calculation
+    span = max(lat_span, lon_span)
+    if span < 0.01: span = 0.05
+    elif span > 0.5: span = 0.5
+    
+    r_out = span * 0.45
+    
+    # Generate vertices grid in dictionary to ensure shared coordinates
+    vertices = {}
+    for i in range(M + 1):
+        for j in range(N + 1):
+            # Normalized coordinates from -0.5 to 0.5
+            u = i / float(M) - 0.5
+            v = j / float(N) - 0.5
+            
+            # Polar coordinates mapping
+            d = math.sqrt(u**2 + v**2)
+            theta = math.atan2(u, v)
+            
+            # Organic boundary noise
+            boundary_noise = 0.12 * math.sin(theta * 6.0 + seed * 0.01)
+            r_limit = r_out * (1.0 + boundary_noise)
+            
+            # Map to region
+            d_norm = d * 2.0
+            if d_norm > 1.0:
+                d_norm = 1.0
+                
+            y = lat + d_norm * r_limit * math.sin(theta)
+            x = lon + d_norm * r_limit * math.cos(theta)
+            
+            # Perturb interior points to create irregular master-plan blocks
+            if 0 < i < M and 0 < j < N:
+                vertex_seed = seed + i * 13 + j * 37
+                pert_r = r_out * 0.12
+                y += pert_r * math.sin(vertex_seed * 1.5)
+                x += pert_r * math.cos(vertex_seed * 2.2)
+                
+            vertices[(i, j)] = [y, x]
+            
+    # Parse base clean location name (e.g. "Gurgaon", "North 24 Parganas")
+    clean_name = "".join([c for c in location_name if c.isalnum() or c.isspace()]).split(',')[0].strip()
+    if not clean_name:
+        clean_name = "District"
+        
     crop_list = ["Wheat", "Rice", "Sugarcane", "Cotton", "Maize", "Fallow"]
     crop_colors = {
         "Wheat": "#f1c40f",      # Yellow
@@ -92,73 +139,76 @@ def generate_grids(lat, lon, seed, telemetry, crop, stage):
     stress_map = []
     irrigation_map = []
     
-    # 5x5 Grid Generation
-    for i in range(5):
-        for j in range(5):
-            cell_seed = seed + i * 17 + j * 31
+    for i in range(M):
+        for j in range(N):
+            cell_seed = seed + i * 17 + j * 29
+            cell_id = f"sector_{i}_{j}"
             
-            # Grid Cell Coordinates (rectangles)
-            lat_min = lat + (i - 2.5) * spacing
-            lat_max = lat + (i - 1.5) * spacing
-            lon_min = lon + (j - 2.5) * spacing
-            lon_max = lon + (j - 1.5) * spacing
+            # Custom sector name
+            # Sector numbering matches image 2 style (e.g. "Sector 14", "Sector 45")
+            sector_num = (i * N + j) * 3 + 12
+            block_name = f"{clean_name} Sector {sector_num}"
             
+            # Quad coordinates
             coords = [
-                [lat_min, lon_min],
-                [lat_max, lon_min],
-                [lat_max, lon_max],
-                [lat_min, lon_max],
-                [lat_min, lon_min]
+                vertices[(i, j)],
+                vertices[(i + 1, j)],
+                vertices[(i + 1, j + 1)],
+                vertices[(i, j + 1)],
+                vertices[(i, j)]
             ]
             
-            cell_id = f"cell_{i}_{j}"
+            # Approximate area
+            # Total area of region / 25
+            total_area = math.pi * (r_out * 111.0) ** 2
+            area = round(total_area / 25.0, 1)
             
-            # 1. Crop Classification Map
-            crop_idx = int(cell_seed % len(crop_list))
-            # Force the center cell to match user's selected crop
-            cell_crop = crop if (i == 2 and j == 2) else crop_list[crop_idx]
-            confidence = 80.0 + (cell_seed % 18)
-            area = round(1.2 + (cell_seed % 35) / 10.0, 1)
+            # 1. Crop Classification
+            # Force the center cell (2, 2) to match user's selected crop
+            if i == 2 and j == 2:
+                cell_crop = crop
+            else:
+                crop_idx = int(cell_seed % len(crop_list))
+                cell_crop = crop_list[crop_idx]
+                
+            confidence = round(83.0 + (cell_seed % 14), 1)
             
             crop_map.append({
                 "id": cell_id,
                 "coords": coords,
-                "cropType": cell_crop,
+                "cropType": f"{block_name}: {cell_crop}",
                 "confidence": confidence,
                 "area": area,
                 "color": crop_colors.get(cell_crop, "#95a5a6")
             })
             
-            # 2. Moisture Stress Map (Stage-aware)
-            # Center cells reflect current user crop telemetry
-            cell_ndvi = telemetry["ndvi"] if (i == 2 and j == 2) else max(0.1, telemetry["ndvi"] - 0.2 + (cell_seed % 40) / 100.0)
-            cell_ndwi = telemetry["ndwi"] if (i == 2 and j == 2) else max(0.05, telemetry["ndwi"] - 0.15 + (cell_seed % 30) / 100.0)
+            # 2. Moisture Stress
+            cell_ndvi = telemetry["ndvi"] if (i == 2 and j == 2) else max(0.1, telemetry["ndvi"] - 0.22 + (cell_seed % 45) / 100.0)
+            cell_ndwi = telemetry["ndwi"] if (i == 2 and j == 2) else max(0.05, telemetry["ndwi"] - 0.18 + (cell_seed % 35) / 100.0)
             cell_vci = cell_ndvi * 100
             cell_smi = cell_ndwi * 100
             
-            # Stress classification rule combining VCI and SMI
             stress_score = (cell_vci + cell_smi) / 2
-            
             if stress_score < 25:
                 level = "Severe Stress"
-                color = "#d63031"  # Red
+                color = "#d63031"
             elif stress_score < 40:
                 level = "High Stress"
-                color = "#e17055"  # Orange
+                color = "#e17055"
             elif stress_score < 55:
                 level = "Moderate Stress"
-                color = "#fdcb6e"  # Yellow
+                color = "#fdcb6e"
             elif stress_score < 75:
                 level = "Low Stress"
-                color = "#81c784"  # Light Green
+                color = "#81c784"
             else:
                 level = "No Stress"
-                color = "#2ecc71"  # Green
+                color = "#2ecc71"
                 
             stress_map.append({
                 "id": cell_id,
                 "coords": coords,
-                "level": level,
+                "level": f"{block_name}: {level}",
                 "color": color,
                 "ndvi": round(cell_ndvi, 2),
                 "ndwi": round(cell_ndwi, 2),
@@ -166,12 +216,8 @@ def generate_grids(lat, lon, seed, telemetry, crop, stage):
                 "vci": round(cell_vci, 2)
             })
             
-            # 3. 8-day Crop Water Deficit & Irrigation Advisory
-            # ETc = ET0 * Kc
-            # Simulated reference ET0: 4.5 mm/day
+            # 3. 8-Day Water Deficit & Irrigation Advisory
             et0 = 4.5
-            
-            # Crop coefficient Kc based on crop type and growth stage
             kc_map = {
                 "Wheat": {"Germination": 0.4, "Seedling": 0.7, "Vegetative": 1.15, "Flowering": 1.15, "Fruiting": 1.0, "Maturity": 0.65, "Harvest": 0.25},
                 "Rice": {"Germination": 0.5, "Seedling": 0.8, "Vegetative": 1.20, "Flowering": 1.20, "Fruiting": 1.1, "Maturity": 0.90, "Harvest": 0.30},
@@ -185,27 +231,24 @@ def generate_grids(lat, lon, seed, telemetry, crop, stage):
             etc_daily = et0 * kc
             etc_8day = etc_daily * 8
             
-            # Simulated rainfall and soil contribution
-            rainfall = (cell_seed % 12)  # 0 to 11 mm
+            rainfall = (cell_seed % 14)
             soil_contribution = (cell_smi / 100.0) * etc_8day * 0.5
             eta_8day = min(etc_8day, soil_contribution + rainfall)
-            
             deficit = max(0.0, etc_8day - (rainfall + soil_contribution))
             deficit = round(deficit, 1)
             
-            # Irrigation Priority and Recommendation
             if deficit > 25.0:
                 priority = "High"
-                priority_color = "#1d4ed8"  # Dark Blue
-                recomm = f"Critical deficit. Apply {int(deficit)} mm irrigation via {cell_crop}-optimal drip in next 24h."
+                priority_color = "#1d4ed8"
+                recomm = f"Critical water deficit. Apply {int(deficit)} mm irrigation to {block_name} immediately."
             elif deficit > 10.0:
                 priority = "Medium"
-                priority_color = "#3b82f6"  # Medium Blue
-                recomm = f"Moderate deficit. Apply {int(deficit)} mm irrigation within 3-4 days."
+                priority_color = "#3b82f6"
+                recomm = f"Moderate water deficit. Apply {int(deficit)} mm irrigation within 3 days."
             else:
                 priority = "Low"
-                priority_color = "#93c5fd"  # Light Blue
-                recomm = "Soil moisture is adequate. No immediate irrigation required."
+                priority_color = "#93c5fd"
+                recomm = "Soil moisture adequate. No immediate irrigation required."
                 
             irrigation_map.append({
                 "id": cell_id,
@@ -214,7 +257,7 @@ def generate_grids(lat, lon, seed, telemetry, crop, stage):
                 "etc": round(etc_8day, 1),
                 "eta": round(eta_8day, 1),
                 "rainfall": rainfall,
-                "recommendation": recomm,
+                "recommendation": f"{block_name}: {recomm}",
                 "priority": priority,
                 "color": priority_color
             })
@@ -228,6 +271,8 @@ def get_data():
     crop = request.args.get("crop", "Wheat")
     stage = request.args.get("stage", "Vegetative")
 
+    lat_span = 0.05
+    lon_span = 0.05
     try:
         # Check if coordinates are directly supplied as "lat, lon"
         parts = location.split(',')
@@ -239,6 +284,12 @@ def get_data():
             if place is not None:
                 latitude = place.latitude
                 longitude = place.longitude
+                raw = place.raw
+                if 'boundingbox' in raw:
+                    bbox = raw['boundingbox']
+                    latmin, latmax, lonmin, lonmax = map(float, bbox)
+                    lat_span = abs(latmax - latmin)
+                    lon_span = abs(lonmax - lonmin)
             else:
                 # Default coordinates for Indore
                 latitude = 22.7196
@@ -349,9 +400,9 @@ def get_data():
     # Unique seed for location-specific grid mapping
     seed = int((abs(latitude) + abs(longitude)) * 100000) % 100000
     
-    # Generate 5x5 grids for Crop, Stress, and Irrigation maps
+    # Generate dynamic subdivision blocks for Crop, Stress, and Irrigation maps
     crop_map, stress_map, irrigation_map = generate_grids(
-        latitude, longitude, seed, telemetry, crop, stage
+        latitude, longitude, seed, telemetry, crop, stage, lat_span, lon_span, location
     )
 
     result = {

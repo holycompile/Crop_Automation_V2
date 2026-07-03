@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { FarmData } from "../types";
+import { FarmData, CropZone } from "../types";
 import CropLayer from "./CropLayer";
 import StressLayer from "./StressLayer";
 import IrrigationLayer from "./IrrigationLayer";
@@ -11,22 +11,35 @@ interface SatelliteMapProps {
   farmData: FarmData | null;
 }
 
-const createBoundary = (lat: number, lon: number) => ({
-  type: "Feature",
-  properties: {
-    name: "Farm Boundary"
-  },
-  geometry: {
-    type: "Polygon",
-    coordinates: [[
-      [lon - 0.009, lat - 0.009],
-      [lon + 0.009, lat - 0.009],
-      [lon + 0.009, lat + 0.009],
-      [lon - 0.009, lat + 0.009],
-      [lon - 0.009, lat - 0.009]
-    ]]
-  }
-});
+const getOuterBoundary = (cropMap?: CropZone[]) => {
+  if (!cropMap || cropMap.length === 0) return null;
+  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  cropMap.forEach(zone => {
+    zone.coords.forEach(coord => {
+      const [lat, lon] = coord;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+    });
+  });
+  
+  const pad = 0.001;
+  return {
+    type: "Feature",
+    properties: { name: "District Command Area Outline" },
+    geometry: {
+      type: "Polygon",
+      coordinates: [[
+        [minLon - pad, minLat - pad],
+        [maxLon + pad, minLat - pad],
+        [maxLon + pad, maxLat + pad],
+        [minLon - pad, maxLat + pad],
+        [minLon - pad, minLat - pad]
+      ]]
+    }
+  };
+};
 
 const SatelliteMap: React.FC<SatelliteMapProps> = ({ farmData }) => {
   const [mapMode, setMapMode] = useState<"crop" | "stress" | "irrigation">("crop");
@@ -46,7 +59,7 @@ const SatelliteMap: React.FC<SatelliteMapProps> = ({ farmData }) => {
     );
   }
 
-  const boundary = createBoundary(center[0], center[1]);
+  const boundary = getOuterBoundary(farmData.cropMap || []);
 
   return (
     <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-6 space-y-6">
@@ -116,16 +129,18 @@ const SatelliteMap: React.FC<SatelliteMapProps> = ({ farmData }) => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             
-            <GeoJSON 
-              data={boundary as any} 
-              pathOptions={{
-                color: "#10b981",
-                weight: 2,
-                dashArray: "5, 5",
-                fillColor: "#10b981",
-                fillOpacity: 0.05
-              }}
-            />
+            {boundary && (
+              <GeoJSON 
+                data={boundary as any} 
+                pathOptions={{
+                  color: "#10b981",
+                  weight: 2,
+                  dashArray: "5, 5",
+                  fillColor: "#10b981",
+                  fillOpacity: 0.02
+                }}
+              />
+            )}
 
             {/* Render selected map layer */}
             {mapMode === "crop" && <CropLayer cropMap={farmData.cropMap} />}

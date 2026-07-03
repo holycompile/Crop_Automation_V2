@@ -27,18 +27,32 @@ const StressLayer: React.FC<StressLayerProps> = ({ stressMap }) => {
               <h3 className="text-sm font-bold text-gray-800 border-b border-gray-100 pb-1 mb-1">
                 Moisture Stress Analysis
               </h3>
-              <p className="text-xs mb-1">
-                <strong>Status:</strong>{" "}
-                <span
-                  className="font-bold uppercase tracking-wider text-xs px-1.5 py-0.5 rounded"
-                  style={{
-                    backgroundColor: zone.color + "20",
-                    color: zone.color
-                  }}
-                >
-                  {zone.level}
-                </span>
-              </p>
+              {(() => {
+                const [blockName, level] = zone.level.includes(": ") 
+                  ? zone.level.split(": ") 
+                  : [null, zone.level];
+                return (
+                  <>
+                    {blockName && (
+                      <p className="text-xs text-gray-600 mb-1">
+                        <strong>Subdivision:</strong> <span className="font-semibold text-slate-800">{blockName}</span>
+                      </p>
+                    )}
+                    <p className="text-xs mb-1">
+                      <strong>Status:</strong>{" "}
+                      <span
+                        className="font-bold uppercase tracking-wider text-[11px] px-1.5 py-0.5 rounded"
+                        style={{
+                          backgroundColor: zone.color + "20",
+                          color: zone.color
+                        }}
+                      >
+                        {level}
+                      </span>
+                    </p>
+                  </>
+                );
+              })()}
               <div className="grid grid-cols-2 gap-2 mt-2 pt-1 text-[11px] text-gray-600 border-t border-gray-50">
                 <div>
                   <strong>NDVI:</strong> {zone.ndvi.toFixed(2)}
